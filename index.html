@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Levistone-Navi | 飛行石ナビ</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#030712">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="光線が目的地の方向を指し示すコンパスナビゲーション">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap');
+
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Zen Kaku Gothic New', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      background-color: #030712;
+      padding-top: var(--sat);
+      padding-bottom: var(--sab);
+      padding-left: var(--sal);
+      padding-right: var(--sar);
+    }
+
+    .font-mystic {
+      font-family: 'Cinzel', serif;
+    }
+
+    /* Ambient stars background */
+    .stars-bg {
+      background: radial-gradient(circle at 50% 50%, #0a1128 0%, #030712 100%);
+    }
+
+    /* Pulse Glow for Fixed Stone */
+    @keyframes pulse-glow {
+      0%, 100% {
+        filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.45))
+                drop-shadow(0 0 45px rgba(37, 99, 235, 0.35));
+      }
+      50% {
+        filter: drop-shadow(0 0 32px rgba(56, 189, 248, 0.75))
+                drop-shadow(0 0 65px rgba(96, 165, 250, 0.55));
+      }
+    }
+
+    .stone-glow-active {
+      animation: pulse-glow 3s infinite ease-in-out;
+    }
+
+    /* Radiant Beacon Ray that rotates from the center */
+    .light-beam-pivot {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.16s cubic-bezier(0.25, 1, 0.5, 1);
+      transform-origin: center center;
+      z-index: 20;
+    }
+
+    .light-beam {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      width: 4px;
+      height: min(480px, 60vh);
+      transform: translateX(-50%);
+      background: linear-gradient(to top, 
+        rgba(255, 255, 255, 1) 0%, 
+        rgba(125, 211, 252, 0.95) 25%, 
+        rgba(56, 189, 248, 0.75) 60%, 
+        rgba(37, 99, 235, 0) 100%);
+      box-shadow: 
+        0 0 8px #ffffff,
+        0 0 20px #38bdf8,
+        0 0 40px #0284c7,
+        0 0 70px rgba(2, 132, 199, 0.5);
+      border-radius: 9999px;
+    }
+
+    .beam-core {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      width: 40px;
+      height: min(440px, 55vh);
+      transform: translateX(-50%);
+      background: radial-gradient(ellipse at bottom, rgba(56, 189, 248, 0.4) 0%, rgba(2, 132, 199, 0) 75%);
+    }
+
+    /* Glowing tip arrow on the light beam */
+    .beam-tip {
+      position: absolute;
+      bottom: calc(50% + min(420px, 52vh));
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 9px solid transparent;
+      border-right: 9px solid transparent;
+      border-bottom: 22px solid #e0f2fe;
+      filter: drop-shadow(0 0 10px #38bdf8) drop-shadow(0 0 20px #0284c7);
+    }
+
+    /* Central energetic light nucleus */
+    .center-emitter {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 0 16px #ffffff, 0 0 35px #38bdf8, 0 0 60px #0284c7;
+      animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+
+    /* Glass Panels */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+    }
+
+    /* Bottom Drawer sheet animation */
+    #configModal {
+      transition: opacity 0.25s ease-out;
+    }
+    #drawerContent {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #configModal.hidden-drawer {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #configModal.hidden-drawer #drawerContent {
+      transform: translateY(100%);
+    }
+  </style>
+</head>
+
+<body class="h-[100dvh] w-screen stars-bg text-slate-100 flex flex-col justify-between relative overflow-hidden select-none">
+
+  <!-- Floating Starfield Particles Canvas -->
+  <canvas id="starCanvas" class="absolute inset-0 pointer-events-none z-0"></canvas>
+
+  <!-- Top App Header (Mobile Safe Spacing) -->
+  <header class="relative z-20 px-4 pt-3 pb-2 flex items-center justify-between">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-9 h-9 rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center shadow-lg shadow-cyan-500/30 flex-shrink-0">
+        <i class="ph-bold ph-compass text-cyan-300 text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-xs sm:text-sm font-mystic tracking-widest uppercase font-bold bg-gradient-to-r from-cyan-200 via-sky-300 to-blue-400 bg-clip-text text-transparent">
+          Levistone-Navi
+        </h1>
+        <p class="text-[10px] text-cyan-400/80 font-mono tracking-tight" id="accuracyIndicator">GPS: 待機中</p>
+      </div>
+    </div>
+
+    <!-- Top Action Buttons with Min 44px Touch Size -->
+    <div class="flex items-center space-x-2">
+      <!-- Wake Lock Indicator -->
+      <div id="wakeLockBadge" class="hidden items-center space-x-1 px-2.5 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-[10px] text-cyan-300 shadow">
+        <i class="ph-fill ph-sun"></i>
+        <span>常時点灯</span>
+      </div>
+
+      <!-- Settings / Destination Target Button -->
+      <button id="openConfigBtn" aria-label="目的地設定" class="min-w-[44px] min-h-[44px] p-2.5 rounded-full glass-card hover:border-cyan-400 text-cyan-300 active:scale-95 transition-all flex items-center justify-center">
+        <i class="ph ph-sliders-horizontal text-xl"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Central Levistone & Light Beam Canvas Stage -->
+  <main class="relative z-10 flex-1 flex flex-col items-center justify-center w-full px-4 overflow-hidden">
+    
+    <!-- Stone Stage Container (Scales Fluidly with Mobile Width & Height) -->
+    <div class="relative w-[min(70vw,260px)] h-[min(70vw,260px)] sm:w-72 sm:h-72 flex items-center justify-center">
+      
+      <!-- Only the light beam rotates around center pointing to destination -->
+      <div id="lightRayPivot" class="light-beam-pivot opacity-0 transition-opacity duration-700">
+        <div class="beam-core"></div>
+        <div class="light-beam"></div>
+        <div class="beam-tip"></div>
+        <div class="center-emitter"></div>
+      </div>
+
+      <!-- Levistone SVG Visual Graphic: Stays fixed upright -->
+      <div id="stoneBody" class="relative z-10 w-full h-full flex items-center justify-center cursor-pointer active:scale-95 transition-transform duration-300">
+        
+        <!-- Outer Crystal Aura Rings -->
+        <div class="absolute inset-0 rounded-full border border-sky-400/20 animate-ping opacity-25 pointer-events-none"></div>
+        <div class="absolute inset-1 rounded-full border border-cyan-400/25 pointer-events-none"></div>
+
+        <!-- The Sacred Levistone Pendant Graphic -->
+        <svg viewBox="0 0 200 240" class="w-full h-full filter drop-shadow-[0_0_20px_rgba(2,132,199,0.7)] stone-glow-active">
+          <defs>
+            <!-- Deep Blue Gem Gradient -->
+            <radialGradient id="gemGradient" cx="45%" cy="35%" r="65%">
+              <stop offset="0%" stop-color="#38bdf8" />
+              <stop offset="25%" stop-color="#0284c7" />
+              <stop offset="65%" stop-color="#03458b" />
+              <stop offset="90%" stop-color="#051c4a" />
+              <stop offset="100%" stop-color="#020d24" />
+            </radialGradient>
+
+            <!-- Inner Refraction Highlight -->
+            <radialGradient id="highlightGlow" cx="40%" cy="25%" r="40%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8" />
+              <stop offset="50%" stop-color="#7dd3fc" stop-opacity="0.2" />
+              <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+            </radialGradient>
+
+            <!-- Metallic Gold Emblem -->
+            <linearGradient id="goldSheen" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fff5b8" />
+              <stop offset="25%" stop-color="#facc15" />
+              <stop offset="60%" stop-color="#ca8a04" />
+              <stop offset="100%" stop-color="#854d0e" />
+            </linearGradient>
+
+            <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.6"/>
+              <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#fde047" flood-opacity="0.5"/>
+            </filter>
+          </defs>
+
+          <!-- Droplet/Egg Stone Outline -->
+          <path d="M 100,15 
+                   C 145,55 185,115 185,160 
+                   A 85,85 0 0,1 15,160 
+                   C 15,115 55,55 100,15 Z" 
+                fill="url(#gemGradient)" 
+                stroke="#60a5fa" 
+                stroke-width="1.8" />
+
+          <!-- Internal Glass Reflections -->
+          <path d="M 100,25 
+                   C 135,62 170,115 170,155 
+                   A 70,70 0 0,1 30,155 
+                   C 30,115 65,62 100,25 Z" 
+                fill="none" 
+                stroke="url(#highlightGlow)" 
+                stroke-width="3" 
+                opacity="0.6" />
+
+          <!-- Top Highlight Crescent -->
+          <ellipse cx="85" cy="65" rx="35" ry="18" transform="rotate(-30 85 65)" fill="url(#highlightGlow)" opacity="0.6" />
+
+          <!-- Golden Bird Crest (Laputa Emblem) -->
+          <g filter="url(#goldGlow)" fill="url(#goldSheen)" stroke="#78350f" stroke-width="0.8">
+            <!-- Central Sphere -->
+            <circle cx="100" cy="115" r="9.5" />
+
+            <!-- Vertical Pillar / Body -->
+            <path d="M 97,122 L 103,122 L 102,154 L 98,154 Z" />
+            <rect x="94" y="153" width="12" height="4.5" rx="2" />
+            
+            <!-- Bottom Arc Anchor -->
+            <path d="M 78,162 C 90,172 110,172 122,162 C 114,167 96,167 78,162 Z" />
+
+            <!-- Left Wing -->
+            <path d="M 94,136 
+                     C 65,138 52,110 65,88 
+                     C 70,82 78,84 75,91 
+                     C 65,107 75,123 93,126 Z" />
+            <path d="M 59,96 C 45,95 42,88 47,85 C 56,85 66,90 66,93 Z" />
+            <path d="M 64,110 C 47,112 43,105 48,102 C 58,103 68,107 68,110 Z" />
+
+            <!-- Right Wing -->
+            <path d="M 106,136 
+                     C 135,138 148,110 135,88 
+                     C 130,82 122,84 125,91 
+                     C 135,107 125,123 107,126 Z" />
+            <path d="M 141,96 C 155,95 158,88 153,85 C 144,85 134,90 134,93 Z" />
+            <path d="M 136,110 C 153,112 157,105 152,102 C 142,103 132,107 132,110 Z" />
+          </g>
+        </svg>
+
+      </div>
+    </div>
+
+    <!-- Direction & Distance Telemetry (Mobile Readable Typography) -->
+    <div class="mt-4 sm:mt-6 flex flex-col items-center text-center">
+      <div class="text-[10px] uppercase tracking-widest text-cyan-400 font-mono font-medium">Destination Distance</div>
+      <div id="distanceDisplay" class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-mono mt-0.5">
+        --- <span class="text-sm font-normal text-slate-400">km</span>
+      </div>
+
+      <div class="mt-1 sm:mt-2 flex items-center space-x-2 text-[11px] sm:text-xs text-slate-300 font-mono">
+        <div class="truncate max-w-[150px]">目的地: <span id="targetNameBadge" class="text-cyan-300 font-bold">未設定</span></div>
+        <span class="text-slate-600">|</span>
+        <div>方位差: <span id="relativeAngleDisplay" class="text-cyan-300">0°</span></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation Control Panel (Ergonomic Thumb Placement) -->
+  <footer class="relative z-20 p-4 pb-4 sm:pb-6 flex flex-col items-center max-w-md mx-auto w-full">
+    <div class="w-full flex items-center space-x-2.5">
+      <!-- Main Start Navigation Button -->
+      <button id="toggleNavBtn" class="flex-1 min-h-[48px] py-3 px-5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-sm tracking-wider shadow-lg shadow-cyan-500/25 active:scale-95 transition flex items-center justify-center space-x-2">
+        <i class="ph-bold ph-navigation-arrow text-lg"></i>
+        <span id="navBtnLabel">ナビゲーション起動</span>
+      </button>
+
+      <!-- Compass Calibration Helper Button -->
+      <button id="calibrateBtn" title="端末コンパス補正" class="min-w-[48px] min-h-[48px] p-3 rounded-2xl glass-card text-cyan-300 active:scale-95 transition flex items-center justify-center">
+        <i class="ph-bold ph-arrows-clockwise text-xl"></i>
+      </button>
+    </div>
+    
+    <p class="text-[9px] sm:text-[10px] text-slate-500 text-center mt-2.5 leading-tight">
+      ※ 端末を水平に持ち、8の字を描くように動かすと方位精度が向上します
+    </p>
+  </footer>
+
+  <!-- Target & Coordinates Settings Bottom Sheet Drawer -->
+  <div id="configModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden-drawer flex flex-col justify-end">
+    <!-- Tap backdrop to dismiss -->
+    <div id="drawerBackdrop" class="flex-1 w-full"></div>
+
+    <div id="drawerContent" class="bg-slate-900 border-t border-cyan-500/30 rounded-t-3xl p-5 pt-3 w-full max-h-[82dvh] overflow-y-auto max-w-lg mx-auto shadow-2xl">
+      
+      <!-- Drawer Grab Handle for one-thumb closing -->
+      <div class="w-full flex justify-center pb-2 cursor-pointer" id="dragHandle">
+        <div class="w-12 h-1.5 rounded-full bg-slate-700"></div>
+      </div>
+
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center space-x-2">
+          <i class="ph-bold ph-map-pin text-cyan-400 text-xl"></i>
+          <h2 class="text-sm sm:text-base font-bold text-slate-100">目的地の指定</h2>
+        </div>
+        <button id="closeConfigBtn" aria-label="閉じる" class="min-w-[44px] min-h-[44px] -mr-2 text-slate-400 hover:text-white flex items-center justify-center">
+          <i class="ph-bold ph-x text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Presets Selector -->
+      <div class="mt-3.5">
+        <label class="text-[11px] font-semibold text-slate-400 block mb-2">おすすめプリセット</label>
+        <div class="grid grid-cols-2 gap-2" id="presetContainer">
+          <button data-lat="35.681236" data-lon="139.767125" data-name="東京駅" class="preset-btn min-h-[44px] px-3 py-2 text-left text-xs rounded-xl glass-card text-cyan-200 border border-slate-700 hover:border-cyan-400 active:scale-95 transition flex items-center">
+            🏛️ 東京駅
+          </button>
+          <button data-lat="35.360556" data-lon="138.727778" data-name="富士山頂" class="preset-btn min-h-[44px] px-3 py-2 text-left text-xs rounded-xl glass-card text-cyan-200 border border-slate-700 hover:border-cyan-400 active:scale-95 transition flex items-center">
+            🗻 富士山頂
+          </button>
+          <button data-lat="35.03937" data-lon="135.729243" data-name="金閣寺" class="preset-btn min-h-[44px] px-3 py-2 text-left text-xs rounded-xl glass-card text-cyan-200 border border-slate-700 hover:border-cyan-400 active:scale-95 transition flex items-center">
+            ⛩️ 金閣寺（京都）
+          </button>
+          <button data-lat="24.281944" data-lon="123.865" data-name="南十字星の島" class="preset-btn min-h-[44px] px-3 py-2 text-left text-xs rounded-xl glass-card text-cyan-200 border border-slate-700 hover:border-cyan-400 active:scale-95 transition flex items-center">
+            🏝️ 波照間島（最南端）
+          </button>
+        </div>
+      </div>
+
+      <!-- Manual Input Coordinates Form -->
+      <div class="mt-4 space-y-3">
+        <label class="text-[11px] font-semibold text-slate-400 block">目的地・地名で検索 / 座標入力</label>
+        <div>
+          <div class="flex items-center space-x-1.5">
+            <input type="text" id="targetLabelInput" placeholder="地名や施設名 (例: 東京タワー, 出雲大社)" class="flex-1 min-h-[44px] bg-slate-800 text-xs text-white px-3.5 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-cyan-400">
+            <button id="searchGeoBtn" class="min-h-[44px] px-3.5 py-2 rounded-xl bg-cyan-700/80 hover:bg-cyan-600 text-cyan-100 font-bold text-xs flex items-center space-x-1 border border-cyan-500/40 active:scale-95 transition">
+              <i class="ph-bold ph-magnifying-glass text-sm"></i>
+              <span>検索</span>
+            </button>
+          </div>
+          <div id="geoSearchResultBox" class="hidden mt-1.5 p-2 bg-slate-950/90 border border-cyan-500/30 rounded-xl text-[11px] max-h-36 overflow-y-auto space-y-1"></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <span class="text-[10px] text-slate-400">緯度 (Latitude)</span>
+            <input type="number" step="any" id="latInput" placeholder="35.6812" class="w-full min-h-[40px] bg-slate-800 text-xs text-white px-3 py-1.5 rounded-xl border border-slate-700 focus:outline-none focus:border-cyan-400">
+          </div>
+          <div>
+            <span class="text-[10px] text-slate-400">経度 (Longitude)</span>
+            <input type="number" step="any" id="lonInput" placeholder="139.7671" class="w-full min-h-[40px] bg-slate-800 text-xs text-white px-3 py-1.5 rounded-xl border border-slate-700 focus:outline-none focus:border-cyan-400">
+          </div>
+        </div>
+
+        <button id="saveTargetBtn" class="w-full min-h-[44px] mt-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-bold text-xs text-white transition active:scale-95">
+          この目的地を設定
+        </button>
+      </div>
+
+      <!-- Current GPS status info -->
+      <div class="mt-4 pt-3 border-t border-slate-800 text-[10px] sm:text-[11px] text-slate-400 space-y-1 font-mono">
+        <div>現在地: <span id="currentCoordsTxt" class="text-slate-200">取得中...</span></div>
+        <div>端末方位: <span id="currentHeadingTxt" class="text-slate-200">0° (北)</span></div>
+        <div>目的地方位角: <span id="bearingTxt" class="text-slate-200">0°</span></div>
+      </div>
+
+      <!-- PWA Offline & Sleep notice -->
+      <div class="mt-3 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-[10px] text-slate-400 leading-relaxed mb-2">
+        💡 <strong>Android PWA対応:</strong><br>
+        Chromeメニューから「<strong>ホーム画面に追加</strong>」を行うと、全画面かつオフラインでもGPS単独で起動可能です。
+      </div>
+    </div>
+  </div>
+
+  <!-- Message Toast Banner -->
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 transform -translate-y-4 px-4 py-2 rounded-xl bg-slate-800/95 border border-cyan-400/50 text-cyan-200 text-xs shadow-2xl backdrop-blur-md max-w-[90vw] text-center">
+    通知メッセージ
+  </div>
+
+  <!-- Application Logic -->
+  <script>
+    // Global Navigation State
+    const state = {
+      isNavigating: false,
+      wakeLock: null,
+      watchId: null,
+      userLat: null,
+      userLon: null,
+      targetLat: 35.681236,  // Default: Tokyo Station
+      targetLon: 139.767125,
+      targetName: '東京駅',
+      deviceHeading: 0,      // Degrees clockwise from true north
+      targetBearing: 0,      // Forward azimuth to target
+      distanceMeters: null,
+      relativeAngle: 0
+    };
+
+    // DOM Elements
+    const lightRayPivot = document.getElementById('lightRayPivot');
+    const distanceDisplay = document.getElementById('distanceDisplay');
+    const targetNameBadge = document.getElementById('targetNameBadge');
+    const relativeAngleDisplay = document.getElementById('relativeAngleDisplay');
+    const toggleNavBtn = document.getElementById('toggleNavBtn');
+    const navBtnLabel = document.getElementById('navBtnLabel');
+    const wakeLockBadge = document.getElementById('wakeLockBadge');
+    const accuracyIndicator = document.getElementById('accuracyIndicator');
+    
+    // Config Modal Elements
+    const configModal = document.getElementById('configModal');
+    const drawerBackdrop = document.getElementById('drawerBackdrop');
+    const dragHandle = document.getElementById('dragHandle');
+    const openConfigBtn = document.getElementById('openConfigBtn');
+    const closeConfigBtn = document.getElementById('closeConfigBtn');
+    const saveTargetBtn = document.getElementById('saveTargetBtn');
+    const latInput = document.getElementById('latInput');
+    const lonInput = document.getElementById('lonInput');
+    const targetLabelInput = document.getElementById('targetLabelInput');
+    const searchGeoBtn = document.getElementById('searchGeoBtn');
+    const geoSearchResultBox = document.getElementById('geoSearchResultBox');
+    const currentCoordsTxt = document.getElementById('currentCoordsTxt');
+    const currentHeadingTxt = document.getElementById('currentHeadingTxt');
+    const bearingTxt = document.getElementById('bearingTxt');
+    const toast = document.getElementById('toast');
+
+    function openDrawer() {
+      configModal.classList.remove('hidden-drawer');
+    }
+
+    function closeDrawer() {
+      configModal.classList.add('hidden-drawer');
+    }
+
+    openConfigBtn.addEventListener('click', openDrawer);
+    closeConfigBtn.addEventListener('click', closeDrawer);
+    drawerBackdrop.addEventListener('click', closeDrawer);
+    dragHandle.addEventListener('click', closeDrawer);
+
+    // Load saved destination from LocalStorage if exists
+    function loadSavedSettings() {
+      try {
+        const savedLat = localStorage.getItem('levi_target_lat');
+        const savedLon = localStorage.getItem('levi_target_lon');
+        const savedName = localStorage.getItem('levi_target_name');
+        if (savedLat && savedLon) {
+          state.targetLat = parseFloat(savedLat);
+          state.targetLon = parseFloat(savedLon);
+          state.targetName = savedName || '設定地点';
+        }
+      } catch (e) {
+        console.warn('LocalStorage unavailable:', e);
+      }
+      targetNameBadge.textContent = state.targetName;
+      latInput.value = state.targetLat;
+      lonInput.value = state.targetLon;
+      targetLabelInput.value = state.targetName;
+    }
+
+    // Toast Notice helper
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', '-translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-4');
+      }, 3000);
+    }
+
+    // Geocoding & search logic remains active
+    let searchDebounceTimer = null;
+
+    async function searchLocationByName(query) {
+      const q = query.trim();
+      if (!q) {
+        showToast('検索する地名を入力してください');
+        return;
+      }
+
+      searchGeoBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-sm"></i><span>検索中</span>';
+      searchGeoBtn.disabled = true;
+      geoSearchResultBox.classList.add('hidden');
+      geoSearchResultBox.innerHTML = '';
+
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&accept-language=ja`;
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('Network error');
+        
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          showToast('該当する場所が見つかりませんでした');
+          return;
+        }
+
+        const top = data[0];
+        latInput.value = parseFloat(top.lat).toFixed(6);
+        lonInput.value = parseFloat(top.lon).toFixed(6);
+
+        if (data.length > 1) {
+          geoSearchResultBox.innerHTML = '<div class="text-[10px] text-cyan-400 font-bold mb-1">候補から選択:</div>';
+          data.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'p-2 min-h-[36px] flex items-center rounded-lg hover:bg-cyan-950/80 cursor-pointer text-slate-200 hover:text-cyan-200 transition truncate';
+            row.textContent = item.display_name;
+            row.addEventListener('click', () => {
+              latInput.value = parseFloat(item.lat).toFixed(6);
+              lonInput.value = parseFloat(item.lon).toFixed(6);
+              targetLabelInput.value = item.display_name.split(',')[0];
+              geoSearchResultBox.classList.add('hidden');
+              showToast('緯度・経度を反映しました');
+            });
+            geoSearchResultBox.appendChild(row);
+          });
+          geoSearchResultBox.classList.remove('hidden');
+        }
+
+        showToast(`「${top.display_name.split(',')[0]}」の座標を取得しました`);
+      } catch (err) {
+        console.warn('Geocoding error:', err);
+        showToast('座標検索に失敗しました。数値を直接手動入力してください');
+      } finally {
+        searchGeoBtn.innerHTML = '<i class="ph-bold ph-magnifying-glass text-sm"></i><span>検索</span>';
+        searchGeoBtn.disabled = false;
+      }
+    }
+
+    searchGeoBtn.addEventListener('click', () => {
+      searchLocationByName(targetLabelInput.value);
+    });
+
+    targetLabelInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchLocationByName(targetLabelInput.value);
+      }
+    });
+
+    targetLabelInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      const val = targetLabelInput.value.trim();
+      if (val.length >= 3) {
+        searchDebounceTimer = setTimeout(() => {
+          searchLocationByName(val);
+        }, 1200);
+      }
+    });
+
+    // Preset button click listener
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const lat = parseFloat(btn.dataset.lat);
+        const lon = parseFloat(btn.dataset.lon);
+        const name = btn.dataset.name;
+
+        latInput.value = lat;
+        lonInput.value = lon;
+        targetLabelInput.value = name;
+        applyDestination(lat, lon, name);
+        closeDrawer();
+      });
+    });
+
+    // Manual Save Target
+    saveTargetBtn.addEventListener('click', () => {
+      const lat = parseFloat(latInput.value);
+      const lon = parseFloat(lonInput.value);
+      const name = targetLabelInput.value.trim() || 'カスタム目的地';
+
+      if (isNaN(lat) || isNaN(lon)) {
+        showToast('正しい緯度・経度を入力してください');
+        return;
+      }
+
+      applyDestination(lat, lon, name);
+      closeDrawer();
+    });
+
+    /* -------------------------------------------------------------
+       Math Formulas: Spherical Trigonometry
+       1. Forward Azimuth (Bearing) from Point 1 to Point 2
+       2. Haversine Distance (Meters)
+       ------------------------------------------------------------- */
+    function toRad(deg) { return (deg * Math.PI) / 180; }
+    function toDeg(rad) { return (rad * 180) / Math.PI; }
+
+    function calculateBearing(lat1, lon1, lat2, lon2) {
+      const φ1 = toRad(lat1);
+      const φ2 = toRad(lat2);
+      const Δλ = toRad(lon2 - lon1);
+
+      const y = Math.sin(Δλ) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) -
+                Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+
+      let θ = Math.atan2(y, x);
+      return (toDeg(θ) + 360) % 360; // 0 to 360 clockwise from North
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Earth radius in meters
+      const φ1 = toRad(lat1);
+      const φ2 = toRad(lat2);
+      const Δφ = toRad(lat2 - lat1);
+      const Δλ = toRad(lon2 - lon1);
+
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    }
+
+    /* -------------------------------------------------------------
+       Hardware API: Screen Wake Lock API
+       ------------------------------------------------------------- */
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          state.wakeLock = await navigator.wakeLock.request('screen');
+          wakeLockBadge.classList.remove('hidden');
+          wakeLockBadge.classList.add('flex');
+          
+          state.wakeLock.addEventListener('release', () => {
+            wakeLockBadge.classList.add('hidden');
+            wakeLockBadge.classList.remove('flex');
+          });
+        } catch (err) {
+          console.warn('Wake Lock request failed:', err);
+        }
+      }
+    }
+
+    async function releaseWakeLock() {
+      if (state.wakeLock !== null) {
+        await state.wakeLock.release();
+        state.wakeLock = null;
+        wakeLockBadge.classList.add('hidden');
+        wakeLockBadge.classList.remove('flex');
+      }
+    }
+
+    // Auto re-acquire wake lock if tab regains focus
+    document.addEventListener('visibilitychange', async () => {
+      if (state.isNavigating && document.visibilityState === 'visible') {
+        await requestWakeLock();
+      }
+    });
+
+    /* -------------------------------------------------------------
+       Hardware API: Compass Orientation
+       ------------------------------------------------------------- */
+    function handleOrientation(e) {
+      let compass = null;
+      // Android Chrome provides deviceorientationabsolute or webkitCompassHeading on iOS
+      if (e.webkitCompassHeading) {
+        compass = e.webkitCompassHeading;
+      } else if (e.absolute && e.alpha !== null) {
+        compass = (360 - e.alpha) % 360;
+      } else if (e.alpha !== null) {
+        compass = (360 - e.alpha) % 360;
+      }
+
+      if (compass !== null) {
+        state.deviceHeading = compass;
+        currentHeadingTxt.textContent = `${Math.round(compass)}°`;
+        updateNavigationMath();
+      }
+    }
+
+    function initCompass() {
+      // Check absolute support for accurate true-north Android
+      if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      } else if ('ondeviceorientation' in window) {
+        window.addEventListener('deviceorientation', handleOrientation, true);
+      } else {
+        showToast('電子コンパスセンサーが見つかりません');
+      }
+    }
+
+    /* -------------------------------------------------------------
+       Hardware API: Geolocation Tracking
+       ------------------------------------------------------------- */
+    function startLocationWatch() {
+      if (!('geolocation' in navigator)) {
+        showToast('位置情報APIがサポートされていません');
+        return;
+      }
+
+      accuracyIndicator.textContent = 'GPS: 測位中...';
+
+      state.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          state.userLat = position.coords.latitude;
+          state.userLon = position.coords.longitude;
+          const acc = Math.round(position.coords.accuracy);
+
+          accuracyIndicator.textContent = `GPS: 精度 ±${acc}m`;
+          currentCoordsTxt.textContent = `${state.userLat.toFixed(5)}, ${state.userLon.toFixed(5)}`;
+
+          updateNavigationMath();
+        },
+        (error) => {
+          console.error('GPS Error:', error);
+          let errText = '位置情報を取得できません';
+          if (error.code === 1) errText = '位置情報へのアクセスが拒否されました';
+          if (error.code === 2) errText = 'GPS衛星電波を検索中 (屋外へ移動してください)';
+          if (error.code === 3) errText = 'GPS測位がタイムアウトしました';
+          accuracyIndicator.textContent = 'GPS: 受信待機中';
+          showToast(errText);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 20000
+        }
+      );
+    }
+
+    function stopLocationWatch() {
+      if (state.watchId !== null) {
+        navigator.geolocation.clearWatch(state.watchId);
+        state.watchId = null;
+      }
+      accuracyIndicator.textContent = 'GPS: 待機中';
+    }
+
+    /* -------------------------------------------------------------
+       Navigation Rendering & Angle Calculator
+       ------------------------------------------------------------- */
+    function updateNavigationMath() {
+      if (state.userLat === null || state.userLon === null) return;
+
+      // 1. Calculate Azimuth & Distance
+      state.targetBearing = calculateBearing(
+        state.userLat,
+        state.userLon,
+        state.targetLat,
+        state.targetLon
+      );
+      state.distanceMeters = calculateDistance(
+        state.userLat,
+        state.userLon,
+        state.targetLat,
+        state.targetLon
+      );
+
+      // 2. Relative Bearing = Target Azimuth - Device Heading
+      let diff = state.targetBearing - state.deviceHeading;
+      while (diff < -180) diff += 360;
+      while (diff > 180) diff -= 360;
+      state.relativeAngle = diff;
+
+      // 3. Rotate ONLY the light ray pivot (Levistone remains stationary & upright)
+      lightRayPivot.style.transform = `rotate(${state.relativeAngle}deg)`;
+
+      // 4. Update Distance Display
+      if (state.distanceMeters > 1000) {
+        const km = (state.distanceMeters / 1000).toFixed(1);
+        distanceDisplay.innerHTML = `${km} <span class="text-sm font-normal text-slate-400">km</span>`;
+      } else {
+        const m = Math.round(state.distanceMeters);
+        distanceDisplay.innerHTML = `${m} <span class="text-sm font-normal text-slate-400">m</span>`;
+      }
+
+      relativeAngleDisplay.textContent = `${Math.round(state.relativeAngle)}°`;
+      bearingTxt.textContent = `${Math.round(state.targetBearing)}°`;
+
+      // 5. Dynamic Light Ray Glow effect based on proximity
+      if (state.isNavigating) {
+        lightRayPivot.classList.remove('opacity-0');
+        lightRayPivot.classList.add('opacity-100');
+      }
+    }
+
+    /* -------------------------------------------------------------
+       UI Navigation Toggle
+       ------------------------------------------------------------- */
+    async function toggleNavigation() {
+      if (!state.isNavigating) {
+        // Start Navigation
+        state.isNavigating = true;
+        navBtnLabel.textContent = 'ナビゲーション停止';
+        toggleNavBtn.classList.remove('from-cyan-500', 'to-blue-600');
+        toggleNavBtn.classList.add('from-rose-600', 'to-amber-600');
+
+        await requestWakeLock();
+        initCompass();
+        startLocationWatch();
+        showToast('光線ナビゲーションを開始しました');
+      } else {
+        // Stop Navigation
+        state.isNavigating = false;
+        navBtnLabel.textContent = 'ナビゲーション起動';
+        toggleNavBtn.classList.remove('from-rose-600', 'to-amber-600');
+        toggleNavBtn.classList.add('from-cyan-500', 'to-blue-600');
+        lightRayPivot.classList.remove('opacity-100');
+        lightRayPivot.classList.add('opacity-0');
+
+        stopLocationWatch();
+        await releaseWakeLock();
+        showToast('ナビゲーションを一時停止しました');
+      }
+    }
+
+    function applyDestination(lat, lon, name) {
+      state.targetLat = lat;
+      state.targetLon = lon;
+      state.targetName = name;
+
+      targetNameBadge.textContent = name;
+      try {
+        localStorage.setItem('levi_target_lat', lat);
+        localStorage.setItem('levi_target_lon', lon);
+        localStorage.setItem('levi_target_name', name);
+      } catch (e) {
+        console.warn('LocalStorage unavailable:', e);
+      }
+
+      updateNavigationMath();
+      showToast(`目的地を「${name}」に設定しました`);
+    }
+
+    // Compass Calibration Guidance
+    document.getElementById('calibrateBtn').addEventListener('click', () => {
+      showToast('スマホを持った手をゆっくり大きく「8の字」に振ってください');
+    });
+
+    toggleNavBtn.addEventListener('click', toggleNavigation);
+
+    /* -------------------------------------------------------------
+       Atmospheric Particle Starfield Canvas
+       ------------------------------------------------------------- */
+    const canvas = document.getElementById('starCanvas');
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      stars = Array.from({ length: 45 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * 1.6 + 0.4,
+        alpha: Math.random(),
+        speed: Math.random() * 0.015 + 0.005
+      }));
+    }
+
+    function drawStars() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const s of stars) {
+        s.alpha += s.speed;
+        const currentAlpha = (Math.sin(s.alpha) + 1) / 2;
+        ctx.fillStyle = `rgba(186, 230, 253, ${currentAlpha * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      requestAnimationFrame(drawStars);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // Initial setup on Window Load
+    window.onload = function() {
+      resizeCanvas();
+      drawStars();
+      loadSavedSettings();
+    };
+  </script>
+</body>
+</html>
