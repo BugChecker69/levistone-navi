@@ -11,6 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="description" content="光線が目的地の方向を指し示すコンパスナビゲーション">
+  <link rel="manifest" href="./manifest.json">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -523,7 +524,7 @@
       }, 3000);
     }
 
-    // Geocoding & search logic remains active
+    // Geocoding & search logic
     let searchDebounceTimer = null;
 
     async function searchLocationByName(query) {
@@ -690,7 +691,11 @@
 
     async function releaseWakeLock() {
       if (state.wakeLock !== null) {
-        await state.wakeLock.release();
+        try {
+          await state.wakeLock.release();
+        } catch (e) {
+          console.warn('WakeLock release error:', e);
+        }
         state.wakeLock = null;
         wakeLockBadge.classList.add('hidden');
         wakeLockBadge.classList.remove('flex');
@@ -709,8 +714,8 @@
        ------------------------------------------------------------- */
     function handleOrientation(e) {
       let compass = null;
-      // Android Chrome provides deviceorientationabsolute or webkitCompassHeading on iOS
-      if (e.webkitCompassHeading) {
+      // iOS Safari provides webkitCompassHeading directly (0 to 360 clockwise from North)
+      if (typeof e.webkitCompassHeading !== 'undefined' && e.webkitCompassHeading !== null) {
         compass = e.webkitCompassHeading;
       } else if (e.absolute && e.alpha !== null) {
         compass = (360 - e.alpha) % 360;
@@ -718,21 +723,36 @@
         compass = (360 - e.alpha) % 360;
       }
 
-      if (compass !== null) {
+      if (compass !== null && !isNaN(compass)) {
         state.deviceHeading = compass;
         currentHeadingTxt.textContent = `${Math.round(compass)}°`;
         updateNavigationMath();
       }
     }
 
-    function initCompass() {
-      // Check absolute support for accurate true-north Android
-      if ('ondeviceorientationabsolute' in window) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      } else if ('ondeviceorientation' in window) {
-        window.addEventListener('deviceorientation', handleOrientation, true);
-      } else {
-        showToast('電子コンパスセンサーが見つかりません');
+    async function initCompass() {
+      try {
+        // iOS 13+ requires explicit user permission triggered by user interaction
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const permissionState = await DeviceOrientationEvent.requestPermission();
+          if (permissionState === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+          } else {
+            showToast('方位センサーへのアクセスが拒否されました');
+            return;
+          }
+        } else {
+          // Android and standard browsers
+          if ('ondeviceorientationabsolute' in window) {
+            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+          } else if ('ondeviceorientation' in window) {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+          } else {
+            showToast('電子コンパスセンサーが見つかりません');
+          }
+        }
+      } catch (err) {
+        console.warn('Compass init error:', err);
       }
     }
 
@@ -747,37 +767,45 @@
 
       accuracyIndicator.textContent = 'GPS: 測位中...';
 
-      state.watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          state.userLat = position.coords.latitude;
-          state.userLon = position.coords.longitude;
-          const acc = Math.round(position.coords.accuracy);
+      try {
+        state.watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            state.userLat = position.coords.latitude;
+            state.userLon = position.coords.longitude;
+            const acc = Math.round(position.coords.accuracy);
 
-          accuracyIndicator.textContent = `GPS: 精度 ±${acc}m`;
-          currentCoordsTxt.textContent = `${state.userLat.toFixed(5)}, ${state.userLon.toFixed(5)}`;
+            accuracyIndicator.textContent = `GPS: 精度 ±${acc}m`;
+            currentCoordsTxt.textContent = `${state.userLat.toFixed(5)}, ${state.userLon.toFixed(5)}`;
 
-          updateNavigationMath();
-        },
-        (error) => {
-          console.error('GPS Error:', error);
-          let errText = '位置情報を取得できません';
-          if (error.code === 1) errText = '位置情報へのアクセスが拒否されました';
-          if (error.code === 2) errText = 'GPS衛星電波を検索中 (屋外へ移動してください)';
-          if (error.code === 3) errText = 'GPS測位がタイムアウトしました';
-          accuracyIndicator.textContent = 'GPS: 受信待機中';
-          showToast(errText);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 20000
-        }
-      );
+            updateNavigationMath();
+          },
+          (error) => {
+            console.error('GPS Error:', error);
+            let errText = '位置情報を取得できません';
+            if (error.code === 1) errText = '位置情報へのアクセスが拒否されました';
+            if (error.code === 2) errText = 'GPS衛星電波を検索中 (屋外へ移動してください)';
+            if (error.code === 3) errText = 'GPS測位がタイムアウトしました';
+            accuracyIndicator.textContent = 'GPS: 受信待機中';
+            showToast(errText);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 20000
+          }
+        );
+      } catch (e) {
+        console.warn('watchPosition error:', e);
+      }
     }
 
     function stopLocationWatch() {
       if (state.watchId !== null) {
-        navigator.geolocation.clearWatch(state.watchId);
+        try {
+          navigator.geolocation.clearWatch(state.watchId);
+        } catch (e) {
+          console.warn('clearWatch error:', e);
+        }
         state.watchId = null;
       }
       accuracyIndicator.textContent = 'GPS: 待機中';
@@ -925,6 +953,13 @@
       resizeCanvas();
       drawStars();
       loadSavedSettings();
+
+      // Register Service Worker for offline PWA capabilities
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('Levistone SW registered:', reg.scope))
+          .catch((err) => console.warn('Levistone SW registration failed:', err));
+      }
     };
   </script>
 </body>
