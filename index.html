@@ -714,28 +714,29 @@
     /* -------------------------------------------------------------
        Hardware API: Compass Orientation
        ------------------------------------------------------------- */
+    let compassListening = false;
+
     function handleOrientation(e) {
       let compass = null;
       let mode = 'none';
 
-      // 1. iOS Safari provides webkitCompassHeading (0 = North, 90 = East, etc.)
-      if (typeof e.webkitCompassHeading !== 'undefined' && e.webkitCompassHeading !== null && !isNaN(e.webkitCompassHeading)) {
+      // 1. iOS Safari provides webkitCompassHeading (0 to 360, True/Magnetic North)
+      if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
         compass = e.webkitCompassHeading;
         mode = 'iOS webkit';
       } 
       // 2. Android absolute orientation
-      else if (e.absolute && typeof e.alpha === 'number' && e.alpha !== null) {
+      else if (e.absolute && typeof e.alpha === 'number' && !isNaN(e.alpha)) {
         compass = (360 - e.alpha) % 360;
         mode = 'Android abs';
       } 
-      // 3. Standard deviceorientation fallback
-      else if (typeof e.alpha === 'number' && e.alpha !== null) {
+      // 3. Fallback alpha
+      else if (typeof e.alpha === 'number' && !isNaN(e.alpha)) {
         compass = (360 - e.alpha) % 360;
-        mode = 'Relative alpha';
+        mode = 'Alpha fallback';
       }
 
       if (compass !== null && !isNaN(compass)) {
-        // Adjust for screen orientation if iPhone is tilted landscape
         const screenAngle = (window.screen && window.screen.orientation && window.screen.orientation.angle) 
           ? window.screen.orientation.angle 
           : (window.orientation || 0);
@@ -746,47 +747,45 @@
         state.deviceHeading = trueHeading;
         currentHeadingTxt.textContent = `${Math.round(trueHeading)}°`;
         if (sensorDebugTxt) {
-          sensorDebugTxt.textContent = `${mode}: ${Math.round(compass)}°`;
+          sensorDebugTxt.textContent = `${mode}: ${Math.round(trueHeading)}° (α:${Math.round(e.alpha || 0)})`;
         }
         updateNavigationMath();
       } else {
         if (sensorDebugTxt) {
-          sensorDebugTxt.textContent = '方位データ null';
+          sensorDebugTxt.textContent = `受信中 (値なし α:${e.alpha})`;
         }
       }
     }
 
-    let compassListening = false;
-
-    async function initCompass() {
+    // Must be invoked directly on user tap synchronously
+    async function startCompass() {
       if (compassListening) return;
 
       try {
-        // Check for iOS 13+ permission request
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-          const permissionState = await DeviceOrientationEvent.requestPermission();
-          if (permissionState === 'granted') {
-            window.addEventListener('deviceorientation', handleOrientation, true);
+          // iOS 13+ DeviceOrientation permission request
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, false);
             compassListening = true;
-            if (sensorDebugTxt) sensorDebugTxt.textContent = 'iOS 許可済み';
+            if (sensorDebugTxt) sensorDebugTxt.textContent = 'iOS 権限許可・受信開始';
           } else {
             showToast('方位センサーへのアクセスが拒否されました');
-            if (sensorDebugTxt) sensorDebugTxt.textContent = 'iOS 拒否 (' + permissionState + ')';
-            return;
+            if (sensorDebugTxt) sensorDebugTxt.textContent = 'iOS 権限拒否: ' + res;
           }
         } else {
-          // Standard / Android
+          // Android & PC
           if ('ondeviceorientationabsolute' in window) {
-            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+            window.addEventListener('deviceorientationabsolute', handleOrientation, false);
             compassListening = true;
           } else if ('ondeviceorientation' in window) {
-            window.addEventListener('deviceorientation', handleOrientation, true);
+            window.addEventListener('deviceorientation', handleOrientation, false);
             compassListening = true;
           }
-          if (sensorDebugTxt) sensorDebugTxt.textContent = 'センサーリスナー登録完了';
+          if (sensorDebugTxt) sensorDebugTxt.textContent = 'センサー登録完了';
         }
       } catch (err) {
-        console.warn('Compass init error:', err);
+        console.warn('Compass permission error:', err);
         if (sensorDebugTxt) sensorDebugTxt.textContent = 'エラー: ' + err.message;
       }
     }
@@ -905,9 +904,12 @@
         toggleNavBtn.classList.remove('from-cyan-500', 'to-blue-600');
         toggleNavBtn.classList.add('from-rose-600', 'to-amber-600');
 
-        await requestWakeLock();
-        initCompass();
+        // CRITICAL FOR IOS: Request compass FIRST without waiting for WakeLock
+        const compassPromise = startCompass();
+        const wakeLockPromise = requestWakeLock();
         startLocationWatch();
+
+        await Promise.allSettled([compassPromise, wakeLockPromise]);
         showToast('光線ナビゲーションを開始しました');
       } else {
         // Stop Navigation
