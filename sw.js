@@ -1,29 +1,32 @@
-const CACHE_NAME = 'levistone-navi-v2';
+const CACHE_NAME = 'levistone-navi-v3';
+
+// キャッシュ対象リソース
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
   'https://cdn.tailwindcss.com',
-  'https://unpkg.com/@phosphor-icons/web',
-  'https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap'
+  'https://unpkg.com/@phosphor-icons/web'
 ];
 
-// Install Event: Pre-cache critical files
+// インストール時にキャッシュを事前保存
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
+      console.log('[Service Worker] Caching app shell');
       return cache.addAll(ASSETS_TO_CACHE);
     }).then(() => self.skipWaiting())
   );
 });
 
-// Activate Event: Clean up old caches
+// 新バージョン起動時に古いキャッシュを全削除
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
+    caches.keys().then((keyList) => {
       return Promise.all(
-        keys.map((key) => {
+        keyList.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('[Service Worker] Removing old cache:', key);
             return caches.delete(key);
           }
         })
@@ -32,10 +35,11 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event: Cache-First strategy with network fallback
+// キャッシュ優先で返し、無ければネットワークから取得
 self.addEventListener('fetch', (event) => {
-  // Pass through Nominatim search queries directly to network
+  // Nominatim 等の外部APIリクエストはキャッシュせず通常通信
   if (event.request.url.includes('nominatim.openstreetmap.org')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
@@ -45,23 +49,27 @@ self.addEventListener('fetch', (event) => {
         return cachedResponse;
       }
       return fetch(event.request).then((networkResponse) => {
-        // Cache dynamic external font files if requested
+        // 正常レスポンスならキャッシュへ追加
         if (
-          networkResponse.ok &&
-          (event.request.url.includes('fonts.gstatic.com') ||
-           event.request.url.includes('cdn.tailwindcss.com') ||
-           event.request.url.includes('unpkg.com'))
+          !networkResponse ||
+          networkResponse.status !== 200 ||
+          networkResponse.type !== 'basic'
         ) {
-          const clone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
+          return networkResponse;
         }
+
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+
         return networkResponse;
-      }).catch(() => {
-        // Fallback for offline root access
-        return caches.match('./index.html');
       });
+    }).catch(() => {
+      // 完全オフライン時のフォールバック
+      if (event.request.mode === 'navigate') {
+        return caches.match('./index.html');
+      }
     })
   );
 });
